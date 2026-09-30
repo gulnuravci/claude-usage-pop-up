@@ -3,9 +3,10 @@
 set -euo pipefail
 
 APP_NAME="Claude Usage Popup"
-INSTALL_DIR="${INSTALL_DIR:-$HOME/Applications}"
 
 pkill -x ClaudeUsagePopup 2>/dev/null || true
-rm -rf "$INSTALL_DIR/$APP_NAME.app"
+for dir in /Applications "$HOME/Applications"; do
+  if [[ -d "$dir/$APP_NAME.app" ]]; then rm -rf "$dir/$APP_NAME.app"; fi
+done
 defaults delete io.github.claude-usage-popup 2>/dev/null || true
 echo "👋 Uninstalled. (If it still shows under System Settings → General → Login Items, remove it there.)"

@@ -45,7 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         Notifier.requestPermission()
-        LoginItem.enableOnFirstLaunch()
+        LoginItem.syncOnLaunch()
         store.start()
     }
 
@@ -267,6 +267,7 @@ enum LoginItem {
     static var isEnabled: Bool { SMAppService.mainApp.status == .enabled }
 
     static func set(enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: wantedKey)
         do {
             if enabled { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
         } catch {
@@ -274,13 +275,16 @@ enum LoginItem {
         }
     }
 
-    /// Turn on launch-at-login the first time the installed app runs; afterwards it's your call.
-    static func enableOnFirstLaunch() {
-        let key = "didSetUpLoginItem"
-        guard isSupported, !UserDefaults.standard.bool(forKey: key) else { return }
-        UserDefaults.standard.set(true, forKey: key)
+    /// Launch at login is on unless you turn it off from the menu. Registering again on each launch
+    /// keeps it working if the app moved (say, reinstalled into a different Applications folder).
+    /// If you switched it off in System Settings, the status isn't `.notRegistered`, so we leave it alone.
+    static func syncOnLaunch() {
+        let wanted = UserDefaults.standard.object(forKey: wantedKey) as? Bool ?? true
+        guard isSupported, wanted, SMAppService.mainApp.status == .notRegistered else { return }
         set(enabled: true)
     }
+
+    private static let wantedKey = "launchAtLogin"
 }
 
 enum Notifier {
