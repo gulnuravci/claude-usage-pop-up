@@ -1,0 +1,36 @@
+# When you publish a release on GitHub, this builds the app for Apple Silicon and Intel
+# and attaches ClaudeUsagePopup.zip to it. get.sh downloads that zip.
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the app
+        run: VERSION="${GITHUB_REF_NAME#v}" scripts/build-app.sh --universal
+
+      - name: Zip it
+        run: ditto -c -k --keepParent "build/Claude Usage Popup.app" ClaudeUsagePopup.zip
+
+      - name: Attach to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" ClaudeUsagePopup.zip --clobber
+
+      - name: Keep the build (manual runs)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClaudeUsagePopup
+          path: ClaudeUsagePopup.zip
