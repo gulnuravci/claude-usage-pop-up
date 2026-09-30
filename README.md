@@ -8,6 +8,45 @@ Meet **Tok**, your little token buddy. Tok stays calm while you have plenty of u
   <img src="assets/demo.gif" alt="Tok reacting as usage climbs, runs out, and resets" width="480">
 </p>
 
+## Install
+
+Paste this into Terminal:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/gulnuravci/claude-usage-pop-up/main/get.sh | bash
+```
+
+That's it! It downloads the app, puts it in `~/Applications`, and starts it. It also launches automatically when you log in. To update later, run the same command again.
+
+You need macOS 13 or newer, and you need to have logged into [Claude Code](https://docs.claude.com/en/docs/claude-code) at least once on this Mac. If you use Conductor, you already have. Wondering what it does with your login? See [Is this safe?](#is-this-safe)
+
+<details>
+<summary>Prefer to build it yourself from source?</summary>
+
+```bash
+git clone https://github.com/gulnuravci/claude-usage-pop-up.git
+cd claude-usage-pop-up
+./install.sh
+```
+
+This needs Apple's command line tools. If it says "Swift isn't installed", run `xcode-select --install`, click through the installer, then run `./install.sh` again.
+
+</details>
+
+### Quit and start it again
+
+- **Quit:** click the ring in your menu bar → **Quit**.
+- **Start it again:** press ⌘ Space, type **Claude Usage Popup**, and hit Return. Or run `open -a "Claude Usage Popup"` in Terminal. It also starts on its own the next time you log in.
+- **Just hid the widget?** It's still running. Click the ring in your menu bar → **Show Widget**.
+
+### Uninstall
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/gulnuravci/claude-usage-pop-up/main/uninstall.sh | bash
+```
+
+This quits the app, deletes it, and clears its settings. If you cloned the repo, `./uninstall.sh` does the same.
+
 <p align="center">
   <img src="assets/moods.png" alt="Tok's moods: chill, busy, nervous, panic, napping, new block" width="640">
 </p>
@@ -41,31 +80,6 @@ Short version: you never hand it a key, and your login never leaves your Mac exc
 - **It's read-only.** It never changes, refreshes, or copies your login. Claude Code manages that.
 
 One honest note: the token Claude Code saves is your full Claude login, not a "usage-only" key. So you're trusting this code to do only what it says. It's small and open source. The whole path the token takes is in [`UsageAPI.swift`](Sources/ClaudeUsagePopup/UsageAPI.swift), about 100 lines. Please give it a read!
-
-## Install (about 1 minute)
-
-You need macOS 13 or newer, and you need to have logged into [Claude Code](https://docs.claude.com/en/docs/claude-code) at least once on this Mac. If you use Conductor, you already have.
-
-Paste this into Terminal:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/gulnuravci/claude-usage-pop-up/main/get.sh | bash
-```
-
-That's it! It downloads the app, puts it in `~/Applications`, and starts it. It also launches automatically when you log in. To update later, run the same command again.
-
-<details>
-<summary>Prefer to build it yourself from source?</summary>
-
-```bash
-git clone https://github.com/gulnuravci/claude-usage-pop-up.git
-cd claude-usage-pop-up
-./install.sh
-```
-
-This needs Apple's command line tools. If it says "Swift isn't installed", run `xcode-select --install`, click through the installer, then run `./install.sh` again.
-
-</details>
 
 ## Using it
 
@@ -123,14 +137,6 @@ First, check whether the app can see your usage:
 - **"Anthropic asked us to slow down"**: the usage endpoint is rate limited. The widget backs off on its own (2, 4, 8… up to 15 minutes) and keeps showing your last known numbers in the meantime.
 - **The widget went off-screen**: choose **Show Widget** from the menu bar ring. It jumps back to the top-right corner.
 - **No notifications**: allow them in System Settings → Notifications → Claude Usage Popup.
-
-## Uninstall
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/gulnuravci/claude-usage-pop-up/main/uninstall.sh | bash
-```
-
-(Or run `./uninstall.sh` if you cloned the repo.)
 
 ---
 
