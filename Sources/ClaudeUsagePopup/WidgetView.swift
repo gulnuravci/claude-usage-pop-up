@@ -5,7 +5,6 @@ import SwiftUI
 /// Minimized, it's just Tok in the ring with a tiny percent tag.
 struct WidgetView: View {
     @ObservedObject var store: UsageStore
-    var dragger: WindowDragger?
     var onHide: () -> Void = {}
     /// Lets the asset renderer draw either mode regardless of the saved setting.
     var minimizedOverride: Bool?
@@ -62,7 +61,6 @@ struct WidgetView: View {
             cornerButton("minus", help: "Minimize") { minimizedSetting = true }
         }
         .modifier(ShakeEffect(shakes: CGFloat(store.shakeCount)))
-        .gesture(dragGesture)
         .contextMenu { menuItems }
     }
 
@@ -81,8 +79,7 @@ struct WidgetView: View {
                 cornerButton("arrow.up.left.and.arrow.down.right", help: "Expand") { minimizedSetting = false }
             }
             .modifier(ShakeEffect(shakes: CGFloat(store.shakeCount)))
-            .gesture(dragGesture)
-            .contextMenu { menuItems }
+                .contextMenu { menuItems }
             .padding(.top, 14)
             .padding(.bottom, 8)
             .overlay {
@@ -121,12 +118,6 @@ struct WidgetView: View {
     // MARK: Shared bits
 
     private var sessionPercent: Double { store.snapshot?.session?.percent ?? 0 }
-
-    private var dragGesture: some Gesture {
-        DragGesture(minimumDistance: 2)
-            .onChanged { _ in dragger?.dragChanged() }
-            .onEnded { _ in dragger?.dragEnded() }
-    }
 
     @ViewBuilder private var menuItems: some View {
         Button(minimized ? "Expand" : "Minimize") { minimizedSetting.toggle() }

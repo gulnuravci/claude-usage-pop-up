@@ -9,7 +9,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let store: UsageStore
     private var statusItem: NSStatusItem!
     private var panel: WidgetPanel!
-    private let dragger = WindowDragger()
     private var cancellables = Set<AnyCancellable>()
     private var titleTimer: Timer?
 
@@ -52,10 +51,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: Floating widget
 
     private func setUpPanel() {
-        let root = WidgetView(store: store, dragger: dragger) { [weak self] in self?.setWidget(visible: false) }
+        let root = WidgetView(store: store) { [weak self] in self?.setWidget(visible: false) }
         panel = WidgetPanel(content: root)
-        dragger.window = panel
-        dragger.onMoved = { [weak self] frame in
+        panel.onMoved = { [weak self] frame in
             self?.defaults.set(NSStringFromPoint(NSPoint(x: frame.minX, y: frame.maxY)), forKey: "widgetTopLeft")
         }
 
@@ -206,7 +204,7 @@ final class WidgetPanel: NSPanel {
         hidesOnDeactivate = false
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
 
-        let host = NSHostingView(rootView: content)
+        let host = FirstClickHostingView(rootView: content)
         contentView = host
         setContentSize(host.fittingSize)
 
@@ -219,9 +217,40 @@ final class WidgetPanel: NSPanel {
             self.setFrameOrigin(NSPoint(x: hugRight ? pinned.maxX - self.frame.width : pinned.minX,
                                         y: pinned.maxY - self.frame.height))
         }
+        NotificationCenter.default.addObserver(forName: NSWindow.didMoveNotification, object: self, queue: .main) { [weak self] _ in
+            guard let self else { return }
+            self.pinnedFrame = self.frame
+            self.onMoved(self.frame)
+        }
     }
 
+    /// Called after the widget moves (dragged, or nudged after a resize), to remember the spot.
+    var onMoved: (NSRect) -> Void = { _ in }
+
     private var pinnedFrame: NSRect?
+    private var mouseDown: NSEvent?
+
+    /// Drag from anywhere on the widget, on the very first click, even when another app is focused.
+    /// Once the pointer moves a few points, macOS takes over and moves the window like any other.
+    /// Plain clicks (on Tok or the corner button) still go through to the widget.
+    override func sendEvent(_ event: NSEvent) {
+        switch event.type {
+        case .leftMouseDown:
+            mouseDown = event
+        case .leftMouseDragged:
+            if let down = mouseDown,
+               hypot(event.locationInWindow.x - down.locationInWindow.x, event.locationInWindow.y - down.locationInWindow.y) > 3 {
+                mouseDown = nil
+                performDrag(with: down)
+                return
+            }
+        case .leftMouseUp:
+            mouseDown = nil
+        default:
+            break
+        }
+        super.sendEvent(event)
+    }
 
     override func setFrameOrigin(_ point: NSPoint) {
         super.setFrameOrigin(point)
@@ -236,26 +265,9 @@ final class WidgetPanel: NSPanel {
     override var canBecomeKey: Bool { true }
 }
 
-/// Moves the panel while you drag the card around.
-@MainActor
-final class WindowDragger {
-    weak var window: NSWindow?
-    var onMoved: (NSRect) -> Void = { _ in }
-    private var start: (mouse: NSPoint, origin: NSPoint)?
-
-    func dragChanged() {
-        guard let window else { return }
-        let mouse = NSEvent.mouseLocation
-        if start == nil { start = (mouse, window.frame.origin) }
-        guard let start else { return }
-        window.setFrameOrigin(NSPoint(x: start.origin.x + mouse.x - start.mouse.x,
-                                      y: start.origin.y + mouse.y - start.mouse.y))
-    }
-
-    func dragEnded() {
-        start = nil
-        if let window { onMoved(window.frame) }
-    }
+/// Lets the first click on the widget do something, instead of only focusing it.
+final class FirstClickHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
 // MARK: - System integrations (only available when running as an installed .app)
