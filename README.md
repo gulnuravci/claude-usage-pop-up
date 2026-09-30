@@ -16,7 +16,7 @@ Paste this into Terminal:
 curl -fsSL https://raw.githubusercontent.com/gulnuravci/claude-usage-pop-up/main/get.sh | bash
 ```
 
-That's it! It downloads the app, puts it in your Applications folder, and starts it. It also launches automatically when you log in. To update later, run the same command again.
+That's it! It downloads the app, puts it in your Applications folder, and starts it. It also launches automatically when you log in.
 
 You need macOS 13 or newer, and you need to have logged into [Claude Code](https://docs.claude.com/en/docs/claude-code) at least once on this Mac. If you use Conductor, you already have. Wondering what it does with your login? See [Is this safe?](#is-this-safe)
 
@@ -44,6 +44,16 @@ This needs Apple's command line tools. If it says "Swift isn't installed", run `
 
   Or open your **Applications** folder in Finder and double-click **Claude Usage Popup**. It also starts on its own the next time you log in.
 - **Just hid the widget?** It's still running. Click the ring in your menu bar → **Show Widget**.
+
+### Update
+
+Run the install command again:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/gulnuravci/claude-usage-pop-up/main/get.sh | bash
+```
+
+It swaps in the newest version and restarts it. Your widget's position and settings stay the same. Installing on another Mac works the same way. (Built from source? Run `git pull && ./install.sh` in the repo folder instead.)
 
 ### Uninstall
 
