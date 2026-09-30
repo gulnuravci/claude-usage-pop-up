@@ -36,7 +36,13 @@ This needs Apple's command line tools. If it says "Swift isn't installed", run `
 ### Quit and start it again
 
 - **Quit:** click the ring in your menu bar → **Quit**.
-- **Start it again:** press ⌘ Space, type **Claude Usage Popup**, and hit Return. Or run `open -a "Claude Usage Popup"` in Terminal. It also starts on its own the next time you log in.
+- **Start it again:** run this in Terminal:
+
+  ```bash
+  open -a "Claude Usage Popup"
+  ```
+
+  Or, in Finder, press ⌘⇧H to open your home folder, open **Applications**, and double-click **Claude Usage Popup**. It also starts on its own the next time you log in.
 - **Just hid the widget?** It's still running. Click the ring in your menu bar → **Show Widget**.
 
 ### Uninstall
