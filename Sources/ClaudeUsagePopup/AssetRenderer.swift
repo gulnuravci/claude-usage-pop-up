@@ -10,6 +10,7 @@ enum AssetRenderer {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         renderGIF(to: dir.appendingPathComponent("demo.gif"))
         writePNG(renderMoods(), to: dir.appendingPathComponent("moods.png"))
+        writePNG(renderOutfits(), to: dir.appendingPathComponent("outfits.png"))
         for scheme in [ColorScheme.light, .dark] {
             writePNG(renderWidget(scheme: scheme), to: dir.appendingPathComponent("widget-\(scheme == .dark ? "dark" : "light").png"))
         }
@@ -110,6 +111,36 @@ enum AssetRenderer {
         .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Color(white: 0.16)))
         .environment(\.frozenTime, 0.7)
         return render(backdrop(scheme: .dark) { row }, scale: 2)
+    }
+
+    private static func renderOutfits() -> CGImage? {
+        let columns = 7
+        let occasions = Occasion.allCases
+        let rows = stride(from: 0, to: occasions.count, by: columns).map { Array(occasions[$0 ..< min($0 + columns, occasions.count)]) }
+        let grid = VStack(alignment: .leading, spacing: 16) {
+            ForEach(rows.indices, id: \.self) { r in
+                HStack(spacing: 14) {
+                    ForEach(rows[r], id: \.self) { occasion in
+                        VStack(spacing: 6) {
+                            RingMascot(percent: 30, mood: .chill)
+                                .frame(width: 70, height: 70)
+                                .environment(\.outfit, occasion)
+                            Text(occasion.name)
+                                .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .fixedSize()
+                        }
+                        .frame(width: 84)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 22)
+        .padding(.vertical, 20)
+        .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Color(white: 0.16)))
+        .environment(\.frozenTime, 2.3)
+        return render(backdrop(scheme: .dark) { grid }, scale: 2)
     }
 
     private static func renderIcon() -> CGImage? {

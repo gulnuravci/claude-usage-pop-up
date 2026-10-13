@@ -22,8 +22,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         set { defaults.set(newValue, forKey: "notificationsOn") }
     }
 
-    init(demo: Bool) {
-        store = UsageStore(demo: demo)
+    init(demo: Bool, outfit: Occasion? = nil) {
+        store = UsageStore(demo: demo, forcedOutfit: outfit)
         super.init()
     }
 
@@ -145,6 +145,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         menu.addItem(.separator())
         add(to: menu, "Notifications", #selector(toggleNotifications)).state = notificationsOn ? .on : .off
+        menu.addItem(outfitsItem())
         if LoginItem.isSupported {
             add(to: menu, "Launch at Login", #selector(toggleLoginItem)).state = LoginItem.isEnabled ? .on : .off
         }
@@ -154,10 +155,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @discardableResult
-    private func add(to menu: NSMenu, _ title: String, _ action: Selector, key: String = "") -> NSMenuItem {
+    private func add(to menu: NSMenu, _ title: String, _ action: Selector?, key: String = "") -> NSMenuItem {
         let item = menu.addItem(withTitle: title, action: action, keyEquivalent: key)
         item.target = self
         return item
+    }
+
+    /// A submenu to turn holiday outfits off, or skip the ones you don't celebrate.
+    private func outfitsItem() -> NSMenuItem {
+        let submenu = NSMenu()
+        if let outfit = store.outfit {
+            submenu.addItem(withTitle: "Wearing: \(outfit.emoji) \(outfit.name)", action: nil, keyEquivalent: "")
+            submenu.addItem(.separator())
+        }
+        add(to: submenu, "Dress Up Tok", #selector(toggleOutfits)).state = OutfitSettings.isOn ? .on : .off
+        let occasions = OccasionCalendar.occasions(for: Locale.current.region?.identifier)
+        for group in [occasions.filter { !$0.isSeason }, occasions.filter(\.isSeason)] {
+            submenu.addItem(.separator())
+            for occasion in group {
+                let item = add(to: submenu, "\(occasion.emoji)  \(occasion.name)", OutfitSettings.isOn ? #selector(toggleOccasion(_:)) : nil)
+                item.representedObject = occasion.rawValue
+                item.state = OutfitSettings.isEnabled(occasion) ? .on : .off
+            }
+        }
+        let item = NSMenuItem(title: "Holiday Outfits", action: nil, keyEquivalent: "")
+        item.submenu = submenu
+        return item
+    }
+
+    @objc private func toggleOutfits() {
+        OutfitSettings.isOn.toggle()
+        store.updateOutfit()
+    }
+
+    @objc private func toggleOccasion(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let occasion = Occasion(rawValue: raw) else { return }
+        OutfitSettings.toggle(occasion)
+        store.updateOutfit()
     }
 
     @objc private func toggleWidget() { setWidget(visible: !widgetVisible) }

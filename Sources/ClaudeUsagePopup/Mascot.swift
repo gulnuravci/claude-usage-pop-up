@@ -4,6 +4,7 @@ import SwiftUI
 struct MascotView: View {
     let mood: Mood
     @Environment(\.frozenTime) private var frozenTime
+    @Environment(\.outfit) private var outfit
 
     var body: some View {
         if let frozenTime {
@@ -18,7 +19,7 @@ struct MascotView: View {
 
     private func canvas(at t: Double) -> some View {
         Canvas { context, size in
-            MascotPainter(mood: mood, t: t).draw(in: context, size: size)
+            MascotPainter(mood: mood, t: t, outfit: outfit).draw(in: context, size: size)
         }
     }
 }
@@ -60,6 +61,7 @@ struct BurstSchedule: TimelineSchedule {
 private struct MascotPainter {
     let mood: Mood
     let t: Double
+    let outfit: Occasion?
 
     /// All coordinates below are in a 56×56 design box that gets scaled to fit.
     func draw(in base: GraphicsContext, size: CGSize) {
@@ -88,6 +90,9 @@ private struct MascotPainter {
         let shadowWidth = 22 * (1 - lift / 30)
         g.fill(Ellipse().path(in: CGRect(x: cx - shadowWidth / 2, y: ground + 1, width: shadowWidth, height: 3.5)),
                with: .color(.black.opacity(0.14)))
+        let dressUp = outfit.map { OutfitPainter(occasion: $0, mood: mood, t: t) }
+        dressUp?.drawBackdrop(g)
+        var level = g
 
         if tilt != 0 {
             g.translateBy(x: body.midX, y: bottom)
@@ -115,6 +120,8 @@ private struct MascotPainter {
                    with: .color(Palette.blush.opacity(0.6)))
         }
         drawMouth(&g, x: body.midX, y: faceY + 6)
+        dressUp?.drawHat(&g, body: body, face: CGPoint(x: body.midX, y: faceY))
+        dressUp?.drawProps(&level, ground: ground)
         drawExtras(&g, body: body)
     }
 
@@ -275,11 +282,17 @@ private struct MascotPainter {
 
 // MARK: - Environment hooks used when rendering still images / GIFs
 
+private struct OutfitKey: EnvironmentKey { static let defaultValue: Occasion? = nil }
 private struct FrozenTimeKey: EnvironmentKey { static let defaultValue: Double? = nil }
 private struct FrozenConfettiKey: EnvironmentKey { static let defaultValue: Double? = nil }
 private struct SnapshotModeKey: EnvironmentKey { static let defaultValue = false }
 
 extension EnvironmentValues {
+    /// The holiday or season Tok is dressed for, if any.
+    var outfit: Occasion? {
+        get { self[OutfitKey.self] }
+        set { self[OutfitKey.self] = newValue }
+    }
     /// When set, animations draw this exact moment instead of following the clock.
     var frozenTime: Double? {
         get { self[FrozenTimeKey.self] }

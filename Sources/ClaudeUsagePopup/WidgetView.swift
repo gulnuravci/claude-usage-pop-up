@@ -26,6 +26,7 @@ struct WidgetView: View {
             if minimized { miniWidget } else { fullWidget }
         }
         .onHover { hovering = $0 }
+        .environment(\.outfit, store.outfit)
     }
 
     // MARK: Full card
