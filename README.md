@@ -83,6 +83,7 @@ This quits the app, deletes it, and clears its settings. If you cloned the repo,
 
 - **Heads-ups** at 75%, 90%, and 100%: Tok shakes, says something in a speech bubble, and you get a macOS notification.
 - **Confetti** 🎉 when your 5-hour block or your week resets.
+- **Holiday outfits** 🎃: Tok dresses up for holidays and seasons all year: a witch hat for Halloween, a Santa hat for Christmas, a lantern for Ramadan, diyas for Diwali, sunglasses in summer, and more. See [Holiday outfits](#holiday-outfits).
 
 It works with Claude Pro and Max plans, including usage from Claude Code, Conductor, and claude.ai chats.
 
@@ -106,7 +107,27 @@ One honest note: the token Claude Code saves is your full Claude login, not a "u
 | Click minimized Tok | Expand back to the full card |
 | Click Tok on the full card | Refresh now and get a status report |
 | Right-click the widget | Minimize or expand, refresh, open the usage page, or hide the widget |
-| Click the menu bar ring | See all limits with exact reset times, refresh, open the usage page, show, hide, minimize, or expand the widget, turn notifications or launch-at-login on and off, or quit |
+| Click the menu bar ring | See all limits with exact reset times, refresh, open the usage page, show, hide, minimize, or expand the widget, turn notifications, holiday outfits, or launch-at-login on and off, or quit |
+
+## Holiday outfits
+
+<p align="center">
+  <img src="assets/outfits.png" alt="Tok dressed up for every holiday and season" width="640">
+</p>
+
+Tok picks an outfit from your Mac's date and region. Every date is worked out on your Mac, including the ones that move each year (Easter, Ramadan, Eid, Diwali, Hanukkah, Lunar New Year, Thanksgiving). So the outfits keep coming every year without an update, and nothing is downloaded.
+
+- When two holidays overlap, the shorter one wins (Diwali beats Halloween month). On days with no holiday, Tok dresses for the season, flipped for the Southern Hemisphere.
+- Tok says hello the first time each holiday outfit goes on.
+- Fourth of July shows only in the US. Thanksgiving follows the Canadian date in Canada.
+- Don't celebrate one? Click the menu bar ring → **Holiday Outfits** and uncheck it, or turn off **Dress Up Tok** for no outfits at all.
+
+To see the dates for a year, or to try on an outfit any day:
+
+```bash
+swift run ClaudeUsagePopup --occasions 2027
+swift run ClaudeUsagePopup --demo --outfit halloween
+```
 
 ## How it works
 
@@ -125,6 +146,8 @@ The code is small and easy to read. Everything is in [`Sources/ClaudeUsagePopup`
 | `UsageAPI.swift` | Reads your login and fetches usage |
 | `UsageStore.swift` | Polling, moods, and when to shake, speak, or throw confetti |
 | `Mascot.swift` | Tok, drawn and animated in code |
+| `Occasions.swift` | Holiday and season dates, worked out from the calendar |
+| `Outfits.swift` | Tok's hats, props, and falling leaves and snow |
 | `WidgetView.swift` | The card, rings, and progress bars |
 | `Config.swift` | Thresholds, poll interval, colors: **tweak me!** |
 

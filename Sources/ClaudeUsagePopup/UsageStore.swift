@@ -18,11 +18,15 @@ final class UsageStore: ObservableObject {
     @Published private(set) var confettiCount = 0
     @Published private(set) var shakeCount = 0
     @Published private(set) var partyUntil: Date?
+    /// The holiday or season Tok is dressed for right now.
+    @Published private(set) var outfit: Occasion?
 
     /// Called when we have something worth a system notification.
     var notify: (_ title: String, _ body: String) -> Void = { _, _ in }
 
     private let demo: Bool
+    private let forcedOutfit: Occasion?
+    private var outfitCheckedAt = Date.distantPast
     private var pollTask: Task<Void, Never>?
     private var bubbleTask: Task<Void, Never>?
     private var ticker: Timer?
@@ -33,9 +37,11 @@ final class UsageStore: ObservableObject {
     private var celebratedResets: Set<Date> = []
 
     private static let cacheKey = "lastSnapshot"
+    private static let greetedKey = "greetedOutfits"
 
-    init(demo: Bool = false) {
+    init(demo: Bool = false, forcedOutfit: Occasion? = nil) {
         self.demo = demo
+        self.forcedOutfit = forcedOutfit
         if !demo { loadCache() }
     }
 
@@ -46,6 +52,7 @@ final class UsageStore: ObservableObject {
     }
 
     func start() {
+        updateOutfit()
         if demo { startDemo() } else { startPolling() }
         ticker = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
@@ -161,6 +168,28 @@ final class UsageStore: ObservableObject {
             if isNew { scheduleRefresh(after: 10) }
         }
         if let partyUntil, partyUntil <= now { self.partyUntil = nil }
+        if now.timeIntervalSince(outfitCheckedAt) >= 60 { updateOutfit() }
+    }
+
+    // MARK: Holiday outfits
+
+    /// Picks today's outfit from the calendar. Runs every minute, so it changes over at midnight.
+    func updateOutfit() {
+        outfitCheckedAt = Date()
+        let window = forcedOutfit.map { OccasionWindow(occasion: $0, start: .distantPast, end: .distantFuture) }
+            ?? (OutfitSettings.isOn ? OccasionCalendar.current(isEnabled: OutfitSettings.isEnabled) : nil)
+        guard window?.occasion != outfit else { return }
+        outfit = window?.occasion
+        if let window, let greeting = window.occasion.greeting { greetOnce(greeting, key: "\(window.occasion.rawValue)-\(Int(window.start.timeIntervalSince1970))") }
+    }
+
+    /// Says hello to a new outfit once per holiday, not on every launch.
+    private func greetOnce(_ text: String, key: String) {
+        var greeted = UserDefaults.standard.stringArray(forKey: Self.greetedKey) ?? []
+        guard forcedOutfit != nil || !greeted.contains(key) else { return }
+        greeted = Array((greeted + [key]).suffix(20))
+        if forcedOutfit == nil { UserDefaults.standard.set(greeted, forKey: Self.greetedKey) }
+        say(text)
     }
 
     private func scheduleRefresh(after seconds: TimeInterval) {
@@ -221,7 +250,7 @@ final class UsageStore: ObservableObject {
         switch mood {
         case .sleeping: return "zzz… back in \(countdown ?? "a bit") 💤"
         case .panic, .nervous: return "\(Format.percent(session.percent)) used\(reset) 😬"
-        default: return "boop! \(Format.percent(session.percent)) used\(reset) 🌿"
+        default: return "boop! \(Format.percent(session.percent)) used\(reset) \(outfit?.emoji ?? "🌿")"
         }
     }
 
