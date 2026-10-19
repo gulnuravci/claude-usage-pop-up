@@ -153,6 +153,7 @@ struct WidgetView: View {
                 if let session = snapshot.session { MeterRow(meter: session) }
                 if let weekly = snapshot.weekly { MeterRow(meter: weekly) }
                 ForEach(snapshot.extras) { MeterRow(meter: $0, compact: true) }
+                if let credits = snapshot.credits { MeterRow(meter: credits, compact: true) }
             }
         } else if let error = store.error {
             VStack(alignment: .leading, spacing: 3) {
@@ -238,7 +239,7 @@ struct MeterRow: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Spacer(minLength: 4)
-                Text(Format.percent(meter.percent))
+                Text(meter.amount ?? Format.percent(meter.percent))
                     .font(.system(size: compact ? 11 : 13, weight: .bold, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(Palette.color(for: meter.percent))
