@@ -30,9 +30,9 @@ if arguments.contains("--check") {
     Task {
         do {
             let snapshot = try await UsageAPI.fetch()
-            for meter in [snapshot.session, snapshot.weekly].compactMap({ $0 }) + snapshot.extras {
+            for meter in snapshot.all {
                 let reset = meter.resetsAt.map { "  (resets in \(Format.countdown(to: $0)))" } ?? ""
-                print("\(meter.label): \(Format.percent(meter.percent))\(reset)")
+                print("\(meter.label): \(meter.amount ?? Format.percent(meter.percent))\(reset)")
             }
             exit(0)
         } catch {

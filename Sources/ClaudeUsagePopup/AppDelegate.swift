@@ -117,8 +117,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.removeAllItems()
 
         if let snapshot = store.snapshot {
-            for meter in [snapshot.session, snapshot.weekly].compactMap({ $0 }) + snapshot.extras {
-                var line = "\(meter.label): \(Format.percent(meter.percent))"
+            for meter in snapshot.all {
+                var line = "\(meter.label): \(meter.amount ?? Format.percent(meter.percent))"
                 if let resetsAt = meter.resetsAt {
                     line += "  ·  resets in \(Format.countdown(to: resetsAt)) (\(Format.clock(resetsAt)))"
                 }

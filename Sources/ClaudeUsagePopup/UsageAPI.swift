@@ -5,6 +5,8 @@ struct Meter: Codable, Equatable, Identifiable {
     var label: String
     var percent: Double
     var resetsAt: Date?
+    /// Shown instead of the percent when set, e.g. "$12.40 / $50" for extra usage.
+    var amount: String? = nil
 }
 
 struct UsageSnapshot: Codable, Equatable {
@@ -12,6 +14,11 @@ struct UsageSnapshot: Codable, Equatable {
     var weekly: Meter?
     /// Per-model weekly limits (e.g. "Opus · week"), when your plan has them.
     var extras: [Meter] = []
+    /// Extra usage you pay for once a plan limit runs out. Only set while you're spending it.
+    var credits: Meter?
+
+    /// Every meter, in the order the card and menu list them.
+    var all: [Meter] { [session, weekly].compactMap { $0 } + extras + [credits].compactMap { $0 } }
 
     /// The fullest meter that actually blocks you (session or weekly).
     var worst: Meter? {
@@ -166,6 +173,7 @@ enum UsageAPI {
             snapshot.extras.append(Meter(id: "scoped-\(index)", label: "\(name) · week",
                                          percent: percent, resetsAt: parseDate(limit.resets_at)))
         }
+        snapshot.credits = raw.extra_usage?.meter() ?? raw.spend?.meter()
         if snapshot.session == nil && snapshot.weekly == nil { throw UsageError.badResponse }
         return snapshot
     }
@@ -189,14 +197,18 @@ enum UsageAPI {
         let five_hour: RawWindow?
         let seven_day: RawWindow?
         let limits: [RawLimit?]?
+        let extra_usage: RawExtraUsage?
+        let spend: RawSpend?
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             five_hour = try? c.decodeIfPresent(RawWindow.self, forKey: .five_hour)
             seven_day = try? c.decodeIfPresent(RawWindow.self, forKey: .seven_day)
             limits = (try? c.decodeIfPresent([Lossy<RawLimit>].self, forKey: .limits))?.map(\.value)
+            extra_usage = try? c.decodeIfPresent(RawExtraUsage.self, forKey: .extra_usage)
+            spend = try? c.decodeIfPresent(RawSpend.self, forKey: .spend)
         }
-        enum CodingKeys: String, CodingKey { case five_hour, seven_day, limits }
+        enum CodingKeys: String, CodingKey { case five_hour, seven_day, limits, extra_usage, spend }
     }
 
     private struct RawWindow: Decodable {
@@ -216,6 +228,50 @@ enum UsageAPI {
         let scope: Scope?
         struct Scope: Decodable { let model: Model? }
         struct Model: Decodable { let display_name: String? }
+    }
+
+    /// Extra usage ("usage credits"). Amounts are in minor units (cents), with an optional monthly cap.
+    private struct RawExtraUsage: Decodable {
+        let is_enabled: Bool?
+        let monthly_limit: Double?
+        let used_credits: Double?
+        let utilization: Double?
+        let currency: String?
+        let decimal_places: Int?
+
+        func meter() -> Meter? {
+            guard is_enabled == true, let used_credits, used_credits > 0 else { return nil }
+            let scale = pow(10, Double(decimal_places ?? 2))
+            return creditsMeter(used: used_credits / scale, limit: monthly_limit.map { $0 / scale },
+                                percent: utilization, currency: currency)
+        }
+    }
+
+    /// Newer shape of the same thing: `{"used": {"amount_minor", "currency", "exponent"}, "limit": …, "percent"}`.
+    private struct RawSpend: Decodable {
+        let enabled: Bool?
+        let used: Money?
+        let limit: Money?
+        let percent: Double?
+        struct Money: Decodable {
+            let amount_minor: Double
+            let currency: String?
+            let exponent: Int?
+            var value: Double { amount_minor / pow(10, Double(exponent ?? 2)) }
+        }
+
+        func meter() -> Meter? {
+            guard enabled == true, let used, used.amount_minor > 0 else { return nil }
+            return creditsMeter(used: used.value, limit: limit?.value, percent: percent, currency: used.currency)
+        }
+    }
+
+    private static func creditsMeter(used: Double, limit: Double?, percent: Double?, currency: String?) -> Meter {
+        let limit = limit.flatMap { $0 > 0 ? $0 : nil }
+        let money = { Format.money($0, currency: currency ?? "USD") }
+        return Meter(id: "credits", label: "Extra usage",
+                     percent: percent ?? limit.map { used / $0 * 100 } ?? 0, resetsAt: nil,
+                     amount: limit.map { "\(money(used)) / \(money($0))" } ?? money(used))
     }
 
     /// Skips array elements that fail to decode instead of failing the whole response.

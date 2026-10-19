@@ -277,7 +277,10 @@ final class UsageStore: ObservableObject {
                                resetsAt: start.addingTimeInterval((cycle + 1) * 5 * 3600)),
                 weekly: Meter(id: "weekly", label: "Week", percent: min(99, 21 + cycle * 9 + percent * 0.12),
                               resetsAt: start.addingTimeInterval(3 * 86400 + 7 * 3600)),
-                extras: [Meter(id: "scoped-0", label: "Opus · week", percent: min(99, 12 + percent * 0.3), resetsAt: nil)]
+                extras: [Meter(id: "scoped-0", label: "Opus · week", percent: min(99, 12 + percent * 0.3), resetsAt: nil)],
+                // Extra usage kicks in once you've run out.
+                credits: percent >= 100 ? Meter(id: "credits", label: "Extra usage", percent: 24 + Double(holdTicks) * 3,
+                                                resetsAt: nil, amount: "$\(12 + holdTicks * 2) / $50") : nil
             )
         }
         apply(snapshot())

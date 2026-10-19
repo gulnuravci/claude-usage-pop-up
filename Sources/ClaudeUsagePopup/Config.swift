@@ -80,4 +80,13 @@ enum Format {
     }
 
     static func percent(_ p: Double) -> String { "\(Int(p.rounded()))%" }
+
+    /// "$12.40", or "$50" when there are no cents.
+    static func money(_ amount: Double, currency: String) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.currencyCode = currency
+        if amount == amount.rounded() { f.maximumFractionDigits = 0 }
+        return f.string(from: NSNumber(value: amount)) ?? String(format: "%.2f %@", amount, currency)
+    }
 }
