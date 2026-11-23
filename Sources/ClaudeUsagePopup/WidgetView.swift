@@ -47,7 +47,7 @@ struct WidgetView: View {
 
     private var card: some View {
         HStack(spacing: 14) {
-            RingMascot(percent: sessionPercent, mood: store.mood)
+            RingMascot(percent: primaryPercent, mood: store.mood)
                 .frame(width: Self.ringSize, height: Self.ringSize)
                 .contentShape(Circle())
                 .onTapGesture { store.poke() }
@@ -68,7 +68,7 @@ struct WidgetView: View {
     // MARK: Minimized
 
     private var miniWidget: some View {
-        RingMascot(percent: sessionPercent, mood: store.mood)
+        RingMascot(percent: primaryPercent, mood: store.mood)
             .frame(width: Self.miniRingSize, height: Self.miniRingSize)
             .padding(Self.miniPadding)
             .background(CardBackground(radius: Self.miniRingSize / 2 + Self.miniPadding))
@@ -92,17 +92,18 @@ struct WidgetView: View {
     }
 
     @ViewBuilder private var percentTag: some View {
-        if let session = store.snapshot?.session {
-            let text = session.percent >= 100
-                ? session.resetsAt.map { "💤 " + Format.countdown(to: $0) } ?? "💤"
-                : Format.percent(session.percent)
+        if let snapshot = store.snapshot, let main = store.primary {
+            let blocked = main.percent >= 100 || snapshot.blockedUntil != nil
+            let text = blocked
+                ? (snapshot.blockedUntil ?? main.resetsAt).map { "💤 " + Format.countdown(to: $0) } ?? "💤"
+                : Format.percent(main.percent)
             Text(text)
                 .font(.system(size: 10, weight: .heavy, design: .rounded))
                 .monospacedDigit()
                 .foregroundStyle(.white)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)
-                .background(Capsule().fill(store.mood == .party ? Palette.sage : Palette.color(for: session.percent)))
+                .background(Capsule().fill(store.mood == .party ? Palette.sage : Palette.color(for: blocked ? 100 : main.percent)))
                 .overlay(Capsule().strokeBorder(Color.white.opacity(0.5), lineWidth: 1))
                 .fixedSize()
         }
@@ -110,15 +111,16 @@ struct WidgetView: View {
 
     private var miniTooltip: String {
         guard let snapshot = store.snapshot else { return store.error?.localizedDescription ?? "Click to expand" }
-        let lines = [snapshot.session, snapshot.weekly].compactMap { $0 }.map { meter in
+        let lines = snapshot.mainMeters(weeklyFirst: store.weeklyFirst).map { meter in
             "\(meter.label): \(Format.percent(meter.percent))" + (meter.resetsAt.map { ", resets in \(Format.countdown(to: $0))" } ?? "")
+                + (Pace(meter: meter).map { ", \($0.summary)" } ?? "")
         }
         return (lines + ["Click to expand"]).joined(separator: "\n")
     }
 
     // MARK: Shared bits
 
-    private var sessionPercent: Double { store.snapshot?.session?.percent ?? 0 }
+    private var primaryPercent: Double { store.primary?.percent ?? 0 }
 
     @ViewBuilder private var menuItems: some View {
         Button(minimized ? "Expand" : "Minimize") { minimizedSetting.toggle() }
@@ -150,8 +152,7 @@ struct WidgetView: View {
     @ViewBuilder private var details: some View {
         if let snapshot = store.snapshot {
             VStack(alignment: .leading, spacing: 7) {
-                if let session = snapshot.session { MeterRow(meter: session) }
-                if let weekly = snapshot.weekly { MeterRow(meter: weekly) }
+                ForEach(snapshot.mainMeters(weeklyFirst: store.weeklyFirst)) { MeterRow(meter: $0) }
                 ForEach(snapshot.extras) { MeterRow(meter: $0, compact: true) }
                 if let credits = snapshot.credits { MeterRow(meter: credits, compact: true) }
             }
@@ -232,7 +233,15 @@ struct MeterRow: View {
     var compact = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        // Ticks every 15s so countdowns and the weekly pace marker stay current.
+        TimelineView(.periodic(from: .now, by: 15)) { context in
+            row(now: context.date)
+        }
+    }
+
+    private func row(now: Date) -> some View {
+        let pace = compact ? nil : Pace(meter: meter, now: now)
+        return VStack(alignment: .leading, spacing: 3) {
             HStack(alignment: .firstTextBaseline) {
                 Text(meter.label)
                     .font(.system(size: compact ? 10 : 11, weight: .semibold, design: .rounded))
@@ -244,27 +253,48 @@ struct MeterRow: View {
                     .monospacedDigit()
                     .foregroundStyle(Palette.color(for: meter.percent))
             }
-            ProgressBar(percent: meter.percent, height: compact ? 4 : 5)
+            ProgressBar(percent: meter.percent, height: compact ? 4 : 5, marker: pace?.elapsed)
+                .help(pace.map { "The tick shows how much of the week has gone by (\(Format.percent($0.elapsed * 100)))." } ?? "")
             if !compact, let resetsAt = meter.resetsAt {
-                TimelineView(.periodic(from: .now, by: 15)) { context in
-                    Text(resetText(resetsAt, now: context.date))
-                        .font(.system(size: 10, design: .rounded))
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
+                resetLine(resetsAt, pace: pace, now: now)
+                    .font(.system(size: 10, design: .rounded))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                if meter.percent < 100, let pace, pace.mood != nil, let runsOut = pace.runsOutAt {
+                    Text("runs out ~\(Format.clock(runsOut)) at this rate")
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .foregroundStyle(paceColor(pace))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                 }
             }
         }
     }
 
-    private func resetText(_ date: Date, now: Date) -> String {
+    /// "resets in 3d 7h · 12% over pace", with the pace part colored when it's worrying.
+    private func resetLine(_ date: Date, pace: Pace?, now: Date) -> Text {
         let countdown = Format.countdown(to: date, from: now)
-        return meter.percent >= 100 ? "back in \(countdown) 💤" : "resets in \(countdown)"
+        if meter.percent >= 100 { return Text("back in \(countdown) 💤").foregroundColor(.secondary) }
+        let reset = Text("resets in \(countdown)").foregroundColor(.secondary)
+        guard let pace else { return reset }
+        return reset + Text(" · ").foregroundColor(.secondary) + Text(pace.summary).foregroundColor(paceColor(pace))
+    }
+
+    private func paceColor(_ pace: Pace) -> Color {
+        switch pace.mood {
+        case .panic: return Palette.cherry
+        case .nervous: return Palette.tangerine
+        default: return .secondary
+        }
     }
 }
 
 struct ProgressBar: View {
     let percent: Double
     var height: CGFloat = 5
+    /// Where to draw a small tick, 0…1 (the weekly bar uses it for how much of the week has gone by).
+    var marker: Double? = nil
 
     var body: some View {
         GeometryReader { geo in
@@ -273,6 +303,12 @@ struct ProgressBar: View {
                 Capsule()
                     .fill(Palette.color(for: percent))
                     .frame(width: max(height, geo.size.width * min(percent, 100) / 100))
+                if let marker {
+                    RoundedRectangle(cornerRadius: 0.75)
+                        .fill(Color.primary.opacity(0.55))
+                        .frame(width: 1.5, height: height + 5)
+                        .offset(x: min(max(0, geo.size.width * marker - 0.75), geo.size.width - 1.5))
+                }
             }
         }
         .frame(height: height)

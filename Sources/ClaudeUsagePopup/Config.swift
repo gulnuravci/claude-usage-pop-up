@@ -14,6 +14,12 @@ enum Config {
     static let nervousAt: Double = 75
     static let panicAt: Double = 90
 
+    /// Weekly pace: Tok worries when, at your current rate, you'd end the week at this
+    /// percent of your limit. Only checked once you're this far into the week (seconds).
+    static let paceNervousAt: Double = 110
+    static let pacePanicAt: Double = 140
+    static let paceMinElapsed: TimeInterval = 86400
+
     /// How long speech bubbles stay on screen (seconds).
     static let bubbleDuration: TimeInterval = 5
 
@@ -35,6 +41,90 @@ enum Mood: String, CaseIterable {
         case Config.busyAt...: return .busy
         default: return .chill
         }
+    }
+
+    /// How worried Tok is, for picking the more worried of two moods.
+    var rank: Int {
+        switch self {
+        case .chill, .party, .confused: return 0
+        case .busy: return 1
+        case .nervous: return 2
+        case .panic: return 3
+        case .sleeping: return 4
+        }
+    }
+}
+
+/// Which limit Tok's ring and the menu bar follow. Auto picks weekly on Max 20x.
+enum MainMeter: String, CaseIterable {
+    case auto, session, weekly
+
+    static let key = "mainMeter"
+    static var saved: MainMeter {
+        get { UserDefaults.standard.string(forKey: key).flatMap(MainMeter.init) ?? .auto }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: key) }
+    }
+
+    func weeklyFirst(plan: Plan?) -> Bool {
+        switch self {
+        case .auto: return plan?.weeklyFirst ?? false
+        case .session: return false
+        case .weekly: return true
+        }
+    }
+}
+
+/// How your weekly usage compares with how much of the week has gone by.
+/// 40% used on day 1 is a lot; 40% used on day 6 is fine.
+struct Pace: Equatable {
+    static let window: TimeInterval = 7 * 86400
+
+    /// Fraction of the week that has gone by, 0…1.
+    let elapsed: Double
+    /// Percent used minus percent of the week gone: positive means you're using it up faster than the week passes.
+    let delta: Double
+    /// Where you'd end the week at your current rate. Nil during the first day, when it's too jumpy to mean much.
+    let projected: Double?
+    /// When you'd run out at your current rate, if that's before the reset.
+    let runsOutAt: Date?
+
+    init?(meter: Meter, now: Date = Date()) {
+        guard meter.id == "weekly", let resetsAt = meter.resetsAt else { return nil }
+        let remaining = resetsAt.timeIntervalSince(now)
+        guard remaining > 0 else { return nil }
+        let elapsedSeconds = min(Self.window, max(0, Self.window - remaining))
+        elapsed = elapsedSeconds / Self.window
+        delta = meter.percent - elapsed * 100
+
+        if elapsedSeconds >= Config.paceMinElapsed, meter.percent > 0 {
+            let projected = meter.percent / elapsed
+            self.projected = projected
+            if projected > 100, meter.percent < 100 {
+                let perSecond = meter.percent / elapsedSeconds
+                runsOutAt = now.addingTimeInterval((100 - meter.percent) / perSecond)
+            } else {
+                runsOutAt = nil
+            }
+        } else {
+            projected = nil
+            runsOutAt = nil
+        }
+    }
+
+    /// "on pace", "12% over pace", or "20% under pace".
+    var summary: String {
+        let points = Int(abs(delta).rounded())
+        if delta > 5 { return "\(points)% over pace" }
+        if delta < -5 { return "\(points)% under pace" }
+        return "on pace"
+    }
+
+    /// How worried Tok should be about the pace alone (nil when it's fine).
+    var mood: Mood? {
+        guard let projected else { return nil }
+        if projected >= Config.pacePanicAt { return .panic }
+        if projected >= Config.paceNervousAt { return .nervous }
+        return nil
     }
 }
 

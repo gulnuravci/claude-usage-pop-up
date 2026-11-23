@@ -20,12 +20,17 @@ final class UsageStore: ObservableObject {
     @Published private(set) var partyUntil: Date?
     /// The holiday or season Tok is dressed for right now.
     @Published private(set) var outfit: Occasion?
+    /// Which limit leads: auto (weekly on Max 20x), or one you picked from the menu.
+    @Published var mainMeter = MainMeter.saved {
+        didSet { if !demo { MainMeter.saved = mainMeter } }
+    }
 
     /// Called when we have something worth a system notification.
     var notify: (_ title: String, _ body: String) -> Void = { _, _ in }
 
     private let demo: Bool
     private let forcedOutfit: Occasion?
+    private let forcedPlan: Plan?
     private var outfitCheckedAt = Date.distantPast
     private var pollTask: Task<Void, Never>?
     private var bubbleTask: Task<Void, Never>?
@@ -35,20 +40,35 @@ final class UsageStore: ObservableObject {
     private var lastAttempt = Date.distantPast
     private var alertLevel: Int?
     private var celebratedResets: Set<Date> = []
+    private var paceWarnedWeeks: Set<Date> = []
 
     private static let cacheKey = "lastSnapshot"
     private static let greetedKey = "greetedOutfits"
+    private static let paceWarnedKey = "paceWarnedReset"
 
-    init(demo: Bool = false, forcedOutfit: Occasion? = nil) {
+    init(demo: Bool = false, forcedOutfit: Occasion? = nil, forcedPlan: Plan? = nil) {
         self.demo = demo
         self.forcedOutfit = forcedOutfit
-        if !demo { loadCache() }
+        self.forcedPlan = forcedPlan
+        if demo { mainMeter = .auto } else { loadCache() }
     }
+
+    /// Your plan, from Claude Code's login (or `--plan`).
+    var plan: Plan? { forcedPlan ?? snapshot?.plan }
+    /// True when the weekly limit leads (Max 20x, or picked from the menu).
+    var weeklyFirst: Bool { mainMeter.weeklyFirst(plan: plan) }
+    /// The meter Tok's ring, the mini tag, and the menu bar follow.
+    var primary: Meter? { snapshot?.primary(weeklyFirst: weeklyFirst) }
 
     var mood: Mood {
         if let partyUntil, partyUntil > Date() { return .party }
         guard let worst = snapshot?.worst else { return error == nil ? .chill : .confused }
-        return Mood.forPercent(worst.percent)
+        let mood = Mood.forPercent(worst.percent)
+        // When the week leads, using it up too fast is worrying even before the % gets high.
+        if weeklyFirst, let weekly = snapshot?.weekly, let paceMood = Pace(meter: weekly)?.mood, paceMood.rank > mood.rank {
+            return paceMood
+        }
+        return mood
     }
 
     func start() {
@@ -151,8 +171,26 @@ final class UsageStore: ObservableObject {
 
         guard let worst = fresh.worst else { return }
         let level = Self.alertLevel(for: worst.percent)
-        if level > (alertLevel ?? 0) { announce(level: level, meter: worst) }
+        if level > (alertLevel ?? 0) {
+            announce(level: level, meter: worst)
+        } else if level == 0 {
+            warnAboutPace(fresh.weekly)
+        }
         alertLevel = level
+    }
+
+    /// Once a week, when the week leads: a heads-up that you're on track to run out before it resets.
+    private func warnAboutPace(_ weekly: Meter?) {
+        guard weeklyFirst, let weekly, let week = weekly.resetsAt,
+              let pace = Pace(meter: weekly), pace.mood != nil, let runsOut = pace.runsOutAt else { return }
+        // Remembered across restarts, so relaunching doesn't repeat it.
+        guard UserDefaults.standard.double(forKey: Self.paceWarnedKey) != week.timeIntervalSince1970,
+              paceWarnedWeeks.insert(week).inserted else { return }
+        if !demo { UserDefaults.standard.set(week.timeIntervalSince1970, forKey: Self.paceWarnedKey) }
+        let text = "on track to run out \(Format.clock(runsOut)) 👀"
+        withAnimation(.linear(duration: 0.6)) { shakeCount += 1 }
+        say(text)
+        notify("Claude usage: \(pace.summary) this week", "At this rate your weekly limit runs out \(Format.clock(runsOut)), before it resets \(Format.clock(week)).")
     }
 
     /// Notices a reset the moment the countdown hits zero, without waiting for the next poll.
@@ -242,15 +280,24 @@ final class UsageStore: ObservableObject {
     }
 
     private func statusLine() -> String {
-        guard let snapshot, let session = snapshot.session else {
+        guard let snapshot, let main = primary else {
             return error == nil ? "hi! still checking… 👋" : "hmm, can't see your usage 🤔"
         }
-        let countdown = session.resetsAt.map { Format.countdown(to: $0) }
-        let reset = countdown.map { " · resets in \($0)" } ?? ""
+        if mood == .sleeping {
+            let back = (snapshot.blockedUntil ?? main.resetsAt).map { Format.countdown(to: $0) }
+            return "zzz… back in \(back ?? "a bit") 💤"
+        }
+        let pct = Format.percent(main.percent)
+        // Weekly: how you're pacing says more than a multi-day countdown.
+        let used: String
+        if main.id == "weekly" {
+            used = "\(pct) of your week" + (Pace(meter: main).map { " · \($0.summary)" } ?? "")
+        } else {
+            used = "\(pct) used" + (main.resetsAt.map { " · resets in \(Format.countdown(to: $0))" } ?? "")
+        }
         switch mood {
-        case .sleeping: return "zzz… back in \(countdown ?? "a bit") 💤"
-        case .panic, .nervous: return "\(Format.percent(session.percent)) used\(reset) 😬"
-        default: return "boop! \(Format.percent(session.percent)) used\(reset) \(outfit?.emoji ?? "🌿")"
+        case .panic, .nervous: return "\(used) 😬"
+        default: return "boop! \(used) \(outfit?.emoji ?? "🌿")"
         }
     }
 
@@ -266,17 +313,21 @@ final class UsageStore: ObservableObject {
 
     // MARK: Demo mode (`--demo`): burns through a fake session every ~20 seconds.
 
+    /// With `--plan max20x` it burns through the week instead, 3½ days in, so pace kicks in.
     private func startDemo() {
         var percent = 8.0
         var cycle = 0.0
         var holdTicks = 0
         let start = Date()
+        let weekFirst = weeklyFirst
         func snapshot() -> UsageSnapshot {
-            UsageSnapshot(
-                session: Meter(id: "session", label: "5h session", percent: percent,
+            let fast = percent
+            let slow = min(99, 21 + cycle * 9 + percent * 0.12)
+            return UsageSnapshot(
+                session: Meter(id: "session", label: "5h session", percent: weekFirst ? slow : fast,
                                resetsAt: start.addingTimeInterval((cycle + 1) * 5 * 3600)),
-                weekly: Meter(id: "weekly", label: "Week", percent: min(99, 21 + cycle * 9 + percent * 0.12),
-                              resetsAt: start.addingTimeInterval(3 * 86400 + 7 * 3600)),
+                weekly: Meter(id: "weekly", label: "Week", percent: weekFirst ? fast : slow,
+                              resetsAt: start.addingTimeInterval(3.5 * 86400 + (weekFirst ? cycle * 7 * 86400 : 0))),
                 extras: [Meter(id: "scoped-0", label: "Opus · week", percent: min(99, 12 + percent * 0.3), resetsAt: nil)],
                 // Extra usage kicks in once you've run out.
                 credits: percent >= 100 ? Meter(id: "credits", label: "Extra usage", percent: 24 + Double(holdTicks) * 3,
