@@ -9,9 +9,41 @@ struct Meter: Codable, Equatable, Identifiable {
     var amount: String? = nil
 }
 
+/// Which Claude plan you're on, read from Claude Code's saved login.
+enum Plan: String, Codable {
+    case pro, max5x, max20x, unknown
+
+    /// `tier` is Claude Code's `rateLimitTier` (e.g. "default_claude_max_20x"),
+    /// `subscription` its `subscriptionType` (e.g. "max").
+    static func detect(tier: String?, subscription: String?) -> Plan {
+        let tier = tier?.lowercased() ?? ""
+        if tier.contains("20x") { return .max20x }
+        if tier.contains("5x") { return .max5x }
+        switch subscription?.lowercased() {
+        case "pro": return .pro
+        case "max": return .max5x
+        default: return .unknown
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .pro: return "Pro"
+        case .max5x: return "Max 5x"
+        case .max20x: return "Max 20x"
+        case .unknown: return "your plan"
+        }
+    }
+
+    /// On Max 20x the 5-hour window rarely runs out, so the weekly limit is the one to watch.
+    var weeklyFirst: Bool { self == .max20x }
+}
+
 struct UsageSnapshot: Codable, Equatable {
     var session: Meter?
     var weekly: Meter?
+    /// Optional so snapshots cached by older versions still load.
+    var plan: Plan? = nil
     /// Per-model weekly limits (e.g. "Opus · week"), when your plan has them.
     var extras: [Meter] = []
     /// Extra usage you pay for once a plan limit runs out. Only set while you're spending it.
@@ -19,6 +51,21 @@ struct UsageSnapshot: Codable, Equatable {
 
     /// Every meter, in the order the card and menu list them.
     var all: [Meter] { [session, weekly].compactMap { $0 } + extras + [credits].compactMap { $0 } }
+
+    /// The meter Tok's ring and the menu bar follow.
+    func primary(weeklyFirst: Bool) -> Meter? {
+        weeklyFirst ? (weekly ?? session) : (session ?? weekly)
+    }
+
+    /// Session and weekly, main one first.
+    func mainMeters(weeklyFirst: Bool) -> [Meter] {
+        (weeklyFirst ? [weekly, session] : [session, weekly]).compactMap { $0 }
+    }
+
+    /// When you can use Claude again, if a limit has run out (the later reset, if both have).
+    var blockedUntil: Date? {
+        [session, weekly].compactMap { $0 }.filter { $0.percent >= 100 }.compactMap(\.resetsAt).max()
+    }
 
     /// The fullest meter that actually blocks you (session or weekly).
     var worst: Meter? {
@@ -60,6 +107,7 @@ enum Credentials {
     struct Token {
         let accessToken: String
         let expiresAt: Date?
+        var plan: Plan = .unknown
     }
 
     static func load() throws -> Token {
@@ -93,7 +141,7 @@ enum Credentials {
         return try? Data(contentsOf: home.appendingPathComponent(".claude/.credentials.json"))
     }
 
-    private static func parse(_ raw: Data) -> Token? {
+    static func parse(_ raw: Data) -> Token? {
         var data = raw
         let text = String(decoding: raw, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         // `security -w` prints hex when the stored value isn't plain text.
@@ -104,7 +152,8 @@ enum Credentials {
               let accessToken = oauth["accessToken"] as? String, !accessToken.isEmpty
         else { return nil }
         let expiresAt = (oauth["expiresAt"] as? Double).map { Date(timeIntervalSince1970: $0 / 1000) }
-        return Token(accessToken: accessToken, expiresAt: expiresAt)
+        let plan = Plan.detect(tier: oauth["rateLimitTier"] as? String, subscription: oauth["subscriptionType"] as? String)
+        return Token(accessToken: accessToken, expiresAt: expiresAt, plan: plan)
     }
 }
 
@@ -148,7 +197,9 @@ enum UsageAPI {
         let http = response as? HTTPURLResponse
         switch http?.statusCode ?? 0 {
         case 200:
-            return try parse(data)
+            var snapshot = try parse(data)
+            snapshot.plan = token.plan
+            return snapshot
         case 401, 403:
             throw UsageError.loginExpired
         case 429:

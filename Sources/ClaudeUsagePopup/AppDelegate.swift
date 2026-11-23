@@ -22,8 +22,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         set { defaults.set(newValue, forKey: "notificationsOn") }
     }
 
-    init(demo: Bool, outfit: Occasion? = nil) {
-        store = UsageStore(demo: demo, forcedOutfit: outfit)
+    init(demo: Bool, outfit: Occasion? = nil, plan: Plan? = nil) {
+        store = UsageStore(demo: demo, forcedOutfit: outfit, forcedPlan: plan)
         super.init()
     }
 
@@ -98,14 +98,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func updateStatusItem() {
         guard let button = statusItem?.button else { return }
-        let session = store.snapshot?.session
-        let percent = session?.percent ?? 0
+        let main = store.primary
+        let percent = main?.percent ?? 0
         let color: NSColor = store.mood == .party ? NSColor(Palette.sage) : NSColor(Palette.color(for: percent))
         button.image = Self.ringImage(percent: store.snapshot == nil ? 0 : percent, color: color)
 
         var title = store.snapshot == nil ? " –" : " \(Format.percent(percent))"
-        if let session, percent >= 100, let resetsAt = session.resetsAt {
-            title = " 💤 \(Format.countdown(to: resetsAt))"
+        if let back = store.snapshot?.blockedUntil ?? (percent >= 100 ? main?.resetsAt : nil) {
+            title = " 💤 \(Format.countdown(to: back))"
         }
         let font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize - 1, weight: .medium)
         var attributes: [NSAttributedString.Key: Any] = [.font: font]
@@ -117,12 +117,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.removeAllItems()
 
         if let snapshot = store.snapshot {
-            for meter in snapshot.all {
+            let main = snapshot.mainMeters(weeklyFirst: store.weeklyFirst)
+            for meter in main + snapshot.all.filter({ m in !main.contains { $0.id == m.id } }) {
                 var line = "\(meter.label): \(meter.amount ?? Format.percent(meter.percent))"
                 if let resetsAt = meter.resetsAt {
                     line += "  ·  resets in \(Format.countdown(to: resetsAt)) (\(Format.clock(resetsAt)))"
                 }
                 menu.addItem(withTitle: line, action: nil, keyEquivalent: "")
+                if let pace = Pace(meter: meter) {
+                    var paceLine = "    \(pace.summary) (\(Format.percent(pace.elapsed * 100)) of the week gone)"
+                    if let runsOut = pace.runsOutAt, meter.percent < 100 { paceLine += "  ·  runs out ~\(Format.clock(runsOut))" }
+                    menu.addItem(withTitle: paceLine, action: nil, keyEquivalent: "")
+                }
             }
         }
         if let error = store.error {
@@ -145,6 +151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         menu.addItem(.separator())
         add(to: menu, "Notifications", #selector(toggleNotifications)).state = notificationsOn ? .on : .off
+        menu.addItem(mainMeterItem())
         menu.addItem(outfitsItem())
         if LoginItem.isSupported {
             add(to: menu, "Launch at Login", #selector(toggleLoginItem)).state = LoginItem.isEnabled ? .on : .off
@@ -181,6 +188,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let item = NSMenuItem(title: "Holiday Outfits", action: nil, keyEquivalent: "")
         item.submenu = submenu
         return item
+    }
+
+    /// Pick which limit Tok's ring and the menu bar follow. Auto goes weekly on Max 20x.
+    private func mainMeterItem() -> NSMenuItem {
+        let submenu = NSMenu()
+        let autoTitle = store.plan.map { "Auto (\($0.label))" } ?? "Auto"
+        for (choice, title) in [(MainMeter.auto, autoTitle), (.session, "5-Hour Session"), (.weekly, "Weekly Limit")] {
+            let item = add(to: submenu, title, #selector(pickMainMeter(_:)))
+            item.representedObject = choice.rawValue
+            item.state = store.mainMeter == choice ? .on : .off
+        }
+        let item = NSMenuItem(title: "Main Meter", action: nil, keyEquivalent: "")
+        item.submenu = submenu
+        return item
+    }
+
+    @objc private func pickMainMeter(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let choice = MainMeter(rawValue: raw) else { return }
+        store.mainMeter = choice
     }
 
     @objc private func toggleOutfits() {

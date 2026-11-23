@@ -77,7 +77,9 @@ This quits the app, deletes it, and clears its settings. If you cloned the repo,
 
   <img src="assets/mini.png" alt="Minimized widget at 23%, 81%, and out of tokens" width="330">
 
-- **A menu bar ring** with your session %, so you can see it even when the widget is hidden. Click it for every limit, exact reset times, and settings.
+- **Knows your plan.** It reads your plan from your Claude Code login. On **Max 20x**, where the 5-hour window rarely runs out, Tok's ring, the menu bar, and the top row follow your **weekly limit** instead. On Pro and Max 5x they follow the 5-hour session. Pick one yourself from the menu bar under **Main Meter**.
+- **Weekly pace.** The weekly bar has a small tick showing how much of the week has gone by, and says whether you're "on pace", "12% over pace", or "20% under pace". On Max 20x, Tok gets nervous when you're burning through the week too fast (even at a low %), shows when you'd run out at this rate, and gives you one heads-up per week.
+- **A menu bar ring** with your main meter's %, so you can see it even when the widget is hidden. Click it for every limit, exact reset times, and settings.
 
   <img src="assets/menubar.png" alt="The menu bar ring at 14% with its dropdown menu open" width="330">
 
@@ -107,7 +109,7 @@ One honest note: the token Claude Code saves is your full Claude login, not a "u
 | Click minimized Tok | Expand back to the full card |
 | Click Tok on the full card | Refresh now and get a status report |
 | Right-click the widget | Minimize or expand, refresh, open the usage page, or hide the widget |
-| Click the menu bar ring | See all limits with exact reset times, refresh, open the usage page, show, hide, minimize, or expand the widget, turn notifications, holiday outfits, or launch-at-login on and off, or quit |
+| Click the menu bar ring | See all limits with exact reset times and weekly pace, refresh, open the usage page, show, hide, minimize, or expand the widget, pick the main meter, turn notifications, holiday outfits, or launch-at-login on and off, or quit |
 
 ## Holiday outfits
 
@@ -160,6 +162,10 @@ To see every animation without spending real tokens, run the demo. It fakes a se
 ```bash
 swift run ClaudeUsagePopup --demo
 ```
+
+To see the Max 20x layout, where the week fills up instead, add `--plan max20x` (also `pro` or `max5x`).
+
+The `--check` command below also prints which plan it detected.
 
 ## Troubleshooting
 

@@ -30,9 +30,12 @@ if arguments.contains("--check") {
     Task {
         do {
             let snapshot = try await UsageAPI.fetch()
+            let plan = snapshot.plan ?? .unknown
+            print("Plan: \(plan == .unknown ? "unknown" : plan.label) (main meter: \(plan.weeklyFirst ? "weekly" : "5h session"))")
             for meter in snapshot.all {
                 let reset = meter.resetsAt.map { "  (resets in \(Format.countdown(to: $0)))" } ?? ""
-                print("\(meter.label): \(meter.amount ?? Format.percent(meter.percent))\(reset)")
+                let pace = Pace(meter: meter).map { "  · \($0.summary)" + ($0.runsOutAt.map { ", runs out ~\(Format.clock($0))" } ?? "") } ?? ""
+                print("\(meter.label): \(meter.amount ?? Format.percent(meter.percent))\(reset)\(pace)")
             }
             exit(0)
         } catch {
@@ -54,8 +57,19 @@ if let index = arguments.firstIndex(of: "--outfit") {
     forcedOutfit = occasion
 }
 
+// Pretend to be on a plan: `--plan max20x` (pro, max5x, max20x). Handy with `--demo`.
+var forcedPlan: Plan?
+if let index = arguments.firstIndex(of: "--plan") {
+    let name = arguments.indices.contains(index + 1) ? arguments[index + 1].lowercased() : ""
+    guard let plan = Plan(rawValue: name), plan != .unknown else {
+        print("Unknown plan \"\(name)\". Try one of: pro, max5x, max20x")
+        exit(1)
+    }
+    forcedPlan = plan
+}
+
 let app = NSApplication.shared
-let delegate = MainActor.assumeIsolated { AppDelegate(demo: arguments.contains("--demo"), outfit: forcedOutfit) }
+let delegate = MainActor.assumeIsolated { AppDelegate(demo: arguments.contains("--demo"), outfit: forcedOutfit, plan: forcedPlan) }
 app.delegate = delegate
 app.setActivationPolicy(.accessory)
 app.run()
